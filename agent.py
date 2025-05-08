@@ -1,14 +1,14 @@
-import streamlit as st
-import logging
 import os
-from langchain_groq import ChatGroq
-from langchain_community.utilities import PubMedAPIWrapper
-from langchain_community.tools.pubmed.tool import PubmedQueryRun  # Corrected import
-from langchain.agents import initialize_agent, AgentType
-from langchain_community.callbacks.streamlit import StreamlitCallbackHandler
+import logging
+import streamlit as st
 from dotenv import load_dotenv
 from scholarly import scholarly
+from langchain_community.utilities import PubMedAPIWrapper
+from langchain_community.tools.pubmed.tool import PubmedQueryRun
+from langchain.agents import initialize_agent, AgentType
 from langchain.tools import Tool
+from langchain_community.callbacks.streamlit import StreamlitCallbackHandler
+from langchain_groq import ChatGroq
 
 # Load environment variables
 load_dotenv()
@@ -16,20 +16,33 @@ load_dotenv()
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 
+# Initialize session state for messages
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
 # Retrieve the PubMed API Key
 pubmed_api_key = os.getenv("PUBMED_API_KEY")
-
-# Ensure the API key is available for PubMed
 if not pubmed_api_key:
-    raise ValueError("PubMed API key is missing. Please add it to the environment variables.")
+    st.error("PubMed API key is missing. Please add it to the environment variables.")
+    st.stop()
 
-# Set up PubMed API Wrapper with the API key
-pubmed_wrapper = PubMedAPIWrapper(top_k_results=1, doc_content_chars_max=300, api_key=pubmed_api_key)
+# Retrieve the ChatGroq API Key
+groq_api_key = os.getenv("GROQ_API_KEY")
+if not groq_api_key:
+    st.error("ChatGroq API key is missing. Please add it to the environment variables.")
+    st.stop()
 
-# Initialize PubMedQueryRun tool with PubMed API Wrapper
+# Set up PubMed API Wrapper
+pubmed_wrapper = PubMedAPIWrapper(
+    top_k_results=1,
+    doc_content_chars_max=300,
+    api_key=pubmed_api_key
+)
+
+# Initialize PubMedQueryRun tool
 pubmed = PubmedQueryRun(api_wrapper=pubmed_wrapper)
 
-# Google Scholar Query Function using scholarly
+# Define Google Scholar Query Function
 def google_scholar_query(query, num_results=10, start=0):
     search_results = scholarly.search_pubs(query)
     results = []  # Initialize results as an empty list
@@ -41,12 +54,15 @@ def google_scholar_query(query, num_results=10, start=0):
         return results
     return results
 
-# Wrap google_scholar_query for LangChain compatibility
+# Wrap Google Scholar query function as a tool
 google_scholar_tool = Tool(
     name="GoogleScholarQuery",
     description="Search Google Scholar for academic articles.",
     func=google_scholar_query
 )
+
+# Initialize Tools
+tools = (pubmed, google_scholar_tool)
 
 # Add sliders for user customization in the sidebar
 st.sidebar.title("Customize your search:")
@@ -59,9 +75,9 @@ doc_content_chars_max = st.sidebar.slider(
     min_value=100, max_value=500, value=250, step=100
 )
 
-# Initialize session state for messages
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+# Display previous messages
+for msg in st.session_state.messages:
+    st.chat_message(msg["role"]).write(msg["content"])
 
 # Chat Input Box and Prompt Handling
 if prompt := st.chat_input("Search me recent 5 years articles on role of oxytocin in prevention of PPH"):
@@ -73,44 +89,37 @@ if prompt := st.chat_input("Search me recent 5 years articles on role of oxytoci
         # Log the slider values for debugging
         logging.info(f"Top K Results: {top_k_results}, Max Characters: {doc_content_chars_max}")
 
-        # Pass the values to PubMed API Wrapper or other tools
+        # Update PubMed Wrapper with slider values
         pubmed_wrapper.top_k_results = top_k_results
         pubmed_wrapper.doc_content_chars_max = doc_content_chars_max
 
-        # Set up the callback handler for Streamlit messages
-        st_cb = StreamlitCallbackHandler(st.container(), expand_new_thoughts=False)
-
-        # Initialize the agent with PubMed and Google Scholar tools
-        tools = (pubmed, google_scholar_tool)
-
+        # Initialize LLM
         llm = ChatGroq(
-            groq_api_key=pubmed_api_key,
+            groq_api_key=groq_api_key,
             model_name="gemma2-9b-it",
             streaming=True
         )
 
+        # Initialize the agent with tools
         search_agent = initialize_agent(
             tools,
             llm,
             agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
-            handling_parsing_error=True
+            handle_parsing_errors=True  # Corrected argument
         )
 
+        # Process the query with the agent
         with st.chat_message("assistant"):
-            # Run the agent with the current messages
-            response = search_agent.run(st.session_state.messages, callback=[st_cb])
+            st_cb = StreamlitCallbackHandler(st.container(), expand_new_thoughts=False)
+            response = search_agent.run(prompt, callbacks=[st_cb])
 
-            # Append the assistant's response to the session messages
+            # Append the assistant's response to session state
             st.session_state.messages.append({
                 "role": "assistant",
                 "content": response
             })
 
-            # Display the response from the assistant
+            # Display the response
             st.write(response)
     else:
         st.error("Please provide a valid query.")
-
-# Display previous messages
-for msg in st.session_state.messages:
-    st.chat_message(msg["role"]).write(msg["content"])
