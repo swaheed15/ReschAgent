@@ -64,20 +64,24 @@ google_scholar_tool = Tool(
 # Initialize Tools
 tools = (pubmed, google_scholar_tool)
 
-# Add sliders for user customization in the sidebar
-st.sidebar.title("Customize your search:")
-top_k_results = st.sidebar.slider(
-    "Select the number of the top results:",
-    min_value=1, max_value=10, value=5, step=1
-)
-doc_content_chars_max = st.sidebar.slider(
-    "Select the maximum number of characters for each document summary:",
-    min_value=100, max_value=500, value=250, step=100
-)
+# Add sliders for user customization in a compact layout
+st.write("Customize your search:")
+col1, col2 = st.columns(2)
+with col1:
+    top_k_results = st.slider(
+        "Top Results:",
+        min_value=1, max_value=10, value=5, step=1
+    )
+with col2:
+    doc_content_chars_max = st.slider(
+        "Max Characters:",
+        min_value=100, max_value=500, value=250, step=100
+    )
 
-# Display previous messages
-for msg in st.session_state.messages:
-    st.chat_message(msg["role"]).write(msg["content"])
+# Display previous messages in a scrollable container
+with st.container():
+    for msg in st.session_state.messages:
+        st.chat_message(msg["role"]).write(msg["content"])
 
 # Chat Input Box and Prompt Handling
 if prompt := st.chat_input("Search me recent 5 years articles on role of oxytocin in prevention of PPH"):
