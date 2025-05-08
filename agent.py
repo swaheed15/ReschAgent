@@ -14,6 +14,10 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+import logging
+logging.basicConfig(level=logging.INFO)
+
+
 # Retrieve the PubMed API Key
 pubmed_api_key = os.getenv("PUBMED_API_KEY")
 
@@ -62,7 +66,7 @@ for msg in st.session_state.messages:
     st.chat_message(msg["role"]).write(msg["content"])
 
 # Chat Input Box and Prompt Handling
-if prompt := st.chat_input(placeholder="Search me recent 5 years articles on role of oxytocin in prevention of PPH"):
+if prompt := st.chat_input("Search me recent 5 years articles on role of oxytocin in prevention of PPH"):
     st.session_state.messages.append({"role": "user", "content": prompt})
     st.chat_message("user").write(prompt)
 
